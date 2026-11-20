@@ -1,0 +1,57 @@
+name: Validate applications
+
+on:
+  schedule:
+    - cron: "7 12 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Check applications without writing to the Sheet
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: validate-applications
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate applications
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: onboarding
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Get a token to read organization membership
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with:
+          app-id: ${{ secrets.ONBOARDING_APP_ID }}
+          private-key: ${{ secrets.ONBOARDING_APP_PRIVATE_KEY }}
+          permission-members: read
+
+      - name: Validate applications
+        env:
+          GOOGLE_SERVICE_ACCOUNT: ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+          SHEET_ID: ${{ vars.SHEET_ID }}
+          MEMBERSHIP_ORG: ${{ github.repository_owner }}
+          GITHUB_TOKEN: ${{ github.token }}
+          MEMBERSHIP_TOKEN: ${{ steps.app-token.outputs.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: python -m onboarding.validate
