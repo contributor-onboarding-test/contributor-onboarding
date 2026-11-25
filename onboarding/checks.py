@@ -32,7 +32,12 @@ def check_account(github, application):
     except NotFound:
         return [f'GitHub user "{username}" does not exist']
     errors = []
-    if normalize_name(user.get("name")) != normalize_name(application["name"]):
+    name = normalize_name(user.get("name"))
+    if not name:
+        errors.append(
+            "the Name on your GitHub profile is empty, set it to your Full Name"
+        )
+    elif name != normalize_name(application["name"]):
         errors.append("the Name on your GitHub profile does not match your Full Name")
     text = visible_text(settings.OWNERSHIP_TEXT)
     bio = visible_text(user.get("bio"))

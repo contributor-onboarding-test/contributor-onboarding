@@ -86,14 +86,17 @@ class TestChecks(unittest.TestCase):
                 ["the Name on your GitHub profile does not match your Full Name"],
             )
 
-        with self.subTest("an empty GitHub name fails"):
-            github = FakeGitHub(
-                users={"dee077": {"name": None, "bio": "Contributing to OpenWISP"}}
-            )
-            self.assertIn(
-                "the Name on your GitHub profile does not match your Full Name",
-                validate(github, application()),
-            )
+        for name in (None, "", "   "):
+            with self.subTest("an empty GitHub name fails", name=name):
+                github = FakeGitHub(
+                    users={"dee077": {"name": name, "bio": "Contributing to OpenWISP"}}
+                )
+                self.assertEqual(
+                    validate(github, application()),
+                    [
+                        "the Name on your GitHub profile is empty, set it to your Full Name"
+                    ],
+                )
 
     def test_ownership_text(self):
         github = FakeGitHub(users={"dee077": {"name": "Deepanshu Sahu", "bio": ""}})
