@@ -63,7 +63,7 @@ def application(**overrides):
         "email": "d@example.com",
         "username": "dee077",
         "pr1": "https://github.com/openwisp/openwisp-users/pull/1",
-        "pr2": "https://github.com/openwisp/openwisp-utils/pull/2/files",
+        "pr2": "https://github.com/openwisp/openwisp-utils/pull/2/",
         "pr3": "https://github.com/openwisp/openwisp-controller/pull/3",
     }
     data.update(overrides)
@@ -176,9 +176,12 @@ class TestChecks(unittest.TestCase):
         cases = (
             (
                 {"pr1": "https://github.com/other/openwisp-users/pull/1"},
-                "PR 1 is not a link to an OpenWISP pull request",
+                "PR 1 must be a link like https://github.com/openwisp/<repository>/pull/123",
             ),
-            ({"pr2": "not a link"}, "PR 2 is not a link to an OpenWISP pull request"),
+            (
+                {"pr2": "not a link"},
+                "PR 2 must be a link like https://github.com/openwisp/<repository>/pull/123",
+            ),
             ({"pr2": application()["pr1"]}, "PR 2 is a duplicate of another PR"),
             (
                 {"pr1": "https://github.com/openwisp/openwisp-users/pull/9"},
@@ -188,6 +191,23 @@ class TestChecks(unittest.TestCase):
         for overrides, error in cases:
             with self.subTest(error):
                 self.assertIn(error, validate(FakeGitHub(), application(**overrides)))
+
+        for link in (
+            "http://github.com/openwisp/openwisp-users/pull/1",
+            "https://github.com/openwisp/openwisp-users/pull/1/files",
+            "https://github.com/openwisp/openwisp-users/pull/1?tab=commits",
+            "https://github.com/openwisp/openwisp-users/pull/1#issuecomment-1",
+            "https://github.com/openwisp/openwisp-users/pulls/1",
+            "https://github.com/openwisp/openwisp-users/issues/1",
+        ):
+            with self.subTest(
+                "only the link of the pull request is accepted", link=link
+            ):
+                self.assertIn(
+                    "PR 1 must be a link like "
+                    "https://github.com/openwisp/<repository>/pull/123",
+                    validate(FakeGitHub(), application(pr1=link)),
+                )
 
         with self.subTest("not merged and not opened by the applicant"):
             github = FakeGitHub()

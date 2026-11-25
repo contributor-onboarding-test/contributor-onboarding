@@ -4,10 +4,11 @@ import unicodedata
 from . import settings
 from .github import NotFound
 
+# Only the link of the pull request itself, as the Form asks for it.
 PR_URL = re.compile(
-    r"^https?://github\.com/(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+)/pull/(?P<number>\d+)"
-    r"(?:[/?#].*)?$"
+    r"^https://github\.com/(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+)/pull/(?P<number>\d+)/?$"
 )
+PR_URL_EXAMPLE = "https://github.com/openwisp/<repository>/pull/123"
 MARKDOWN_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
 HTML_TAG = re.compile(r"<[^>]*>")
 
@@ -82,7 +83,7 @@ def check_pull_requests(github, application):
         label = f"PR {field[-1]}"
         match = PR_URL.match(url)
         if not match or match["owner"] != settings.GITHUB_ORG:
-            errors.append(f"{label} is not a link to an OpenWISP pull request")
+            errors.append(f"{label} must be a link like {PR_URL_EXAMPLE}")
             continue
         key = (match["repo"], match["number"])
         if key in seen:
