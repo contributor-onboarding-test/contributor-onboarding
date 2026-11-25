@@ -2,7 +2,7 @@ name: Validate applications
 
 on:
   schedule:
-    - cron: "7 12 * * *"
+    - cron: "21 11 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
