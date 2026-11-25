@@ -112,8 +112,9 @@ class TestValidate(unittest.TestCase):
                 "H3": "✅",
             },
         )
-        (dropdown,) = worksheet.spreadsheet.requests
-        rule = dropdown["setDataValidation"]
+        passed, rejected = worksheet.spreadsheet.requests
+        self.assertEqual(rejected["setDataValidation"]["range"]["startRowIndex"], 2)
+        rule = passed["setDataValidation"]
         self.assertEqual(
             rule["range"],
             {

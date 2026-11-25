@@ -101,8 +101,8 @@ class Sheet:
             result["stars"] = settings.FAILED if star_errors else settings.PASSED
         for key, value in result.items():
             self._write(row, key, value)
-        if not errors:
-            self.dropdowns.append(row)
+        # A maintainer can still change the decision, including a rejection.
+        self.dropdowns.append(row)
 
     def set_email_status(self, row, value):
         self._write(row, "email_status", value)

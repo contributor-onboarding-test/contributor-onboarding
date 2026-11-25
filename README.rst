@@ -32,7 +32,7 @@ GitHub account and pull requests, then writes the result to the Sheet:
 - **Passed**: ``Validation`` is ✅, and ``Decision`` gets a Pending,
   Accept or Reject dropdown set to Pending, for a maintainer to decide.
 - **Failed**: ``Validation`` is ❌ followed by the reasons, ``Decision``
-  is ``Reject``, and the rejection email is queued.
+  gets the same dropdown set to Reject, and the rejection email is queued.
 - **GitHub unavailable**: the row is left unchanged and checked on the
   next run.
 
