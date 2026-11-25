@@ -6,6 +6,8 @@ const FAILED = "❌";
 const STARS_COLUMN = "Have you started OpenWISP repositories";
 const TERMS_COLUMN = "Terms and policies";
 const CONTACT_COLUMN = "Other contact (Optional)";
+// set once the email about the decision is sent
+const EMAIL_STATUS_COLUMN = "Email status";
 // the options of the Terms question, all of them must be checked
 const TERMS = [
   "I have read and accept the Contributing Guidelines",
@@ -115,6 +117,7 @@ function prepareRow(sheet, header, row, answers) {
     .getRange(row, getColumn(header, "Decision"))
     .clearContent()
     .clearDataValidations();
+  sheet.getRange(row, getColumn(header, EMAIL_STATUS_COLUMN)).clearContent();
 }
 
 function onFormSubmit(e) {
