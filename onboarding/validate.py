@@ -2,27 +2,31 @@ import json
 import os
 import sys
 from collections import Counter
-from datetime import datetime, timezone
 
 import gspread
 
 from . import settings
-from .checks import validate
+from .checks import run_checks
 from .github import GitHub, TemporaryError
 from .sheet import Sheet
 
 
-def run(sheet, github, dry_run=False, now=None):
-    now = now or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+def run(sheet, github, dry_run=False):
     counts = Counter()
     for row, application in sheet.pending():
+        counts["pending"] += 1
         try:
-            errors = validate(github, application)
+            results = run_checks(github, application)
         except TemporaryError:
             counts["retry"] += 1
             continue
-        sheet.set_result(row, not errors, errors, now)
+        errors = [error for check in results.values() for error in check]
+        sheet.set_result(row, errors, results.get("stars"))
         counts["failed" if errors else "passed"] += 1
+        # Only the number of rows failing each check is logged, never which.
+        for name, check_errors in results.items():
+            if check_errors:
+                counts[f"failed {name}"] += 1
     if not dry_run:
         sheet.save()
     return counts
@@ -41,12 +45,27 @@ def main():
         token=os.environ.get("GITHUB_TOKEN"),
         membership_token=os.environ.get("MEMBERSHIP_TOKEN"),
     )
-    counts = run(Sheet(open_worksheet()), github, dry_run=dry_run)
-    mode = " (dry run, nothing written)" if dry_run else ""
+    # Logs show counts only: the applications contain personal data.
+    print("Reading the Sheet")
+    sheet = Sheet(open_worksheet())
+    print(f"Applications: {max(len(sheet.rows) - 1, 0)}")
+    if settings.SKIP_MEMBERSHIP_CHECK:
+        print("The membership check is skipped")
+    counts = run(sheet, github, dry_run=dry_run)
+    print(f"Checked: {counts['pending']}")
     print(
         f"passed: {counts['passed']}, failed: {counts['failed']}, "
-        f"retry next run: {counts['retry']}{mode}"
+        f"retry next run: {counts['retry']}"
     )
+    for name in ("membership", "account", "stars", "pull_requests"):
+        print(f"failed {name.replace('_', ' ')} check: {counts[f'failed {name}']}")
+    if dry_run:
+        print("Dry run: nothing was written to the Sheet")
+    else:
+        print(
+            f"Written to the Sheet: {len(sheet.values)} cells, "
+            f"{len(sheet.dropdowns)} Decision dropdowns"
+        )
     return 0
 
 

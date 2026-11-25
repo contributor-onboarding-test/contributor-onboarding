@@ -1,4 +1,4 @@
-from gspread.utils import rowcol_to_a1
+from gspread.utils import absolute_range_name, rowcol_to_a1
 
 from . import settings
 
@@ -14,6 +14,7 @@ class Sheet:
         self.worksheet = worksheet
         self.rows = worksheet.get_all_values()
         self.header = self.rows[0] if self.rows else []
+        self.links = self._links()
         self.columns = {}
         for key, title in settings.FORM_COLUMNS.items():
             self.columns[key] = self._find(title, required=True)
@@ -37,28 +38,53 @@ class Sheet:
             return None
         return matches[0]
 
+    def _links(self):
+        """Returns the URL behind each cell labelled by the Apps Script of the Sheet."""
+        metadata = self.worksheet.spreadsheet.fetch_sheet_metadata(
+            {
+                "ranges": absolute_range_name(self.worksheet.title),
+                "fields": "sheets.data.rowData.values.hyperlink",
+            }
+        )
+        data = metadata["sheets"][0].get("data") or [{}]
+        return {
+            (row, column): cell["hyperlink"]
+            for row, values in enumerate(data[0].get("rowData", []), start=1)
+            for column, cell in enumerate(values.get("values", []))
+            if cell.get("hyperlink")
+        }
+
     def _cell(self, row, key):
         values = self.rows[row - 1]
         index = self.columns[key]
+        if (row, index) in self.links:
+            return self.links[(row, index)].strip()
         return values[index].strip() if index < len(values) else ""
 
     def pending(self):
         for row in range(2, len(self.rows) + 1):
-            if self._cell(row, "username") and not self._cell(row, "validation"):
+            if self._cell(row, "username") and self._cell(row, "validation") in (
+                "",
+                settings.PENDING,
+            ):
                 yield row, {key: self._cell(row, key) for key in settings.FORM_COLUMNS}
 
-    def set_result(self, row, passed, errors, validated_at):
+    def set_result(self, row, errors, star_errors=None):
+        """star_errors is None when the star check did not run."""
+        pending, _accept, reject = settings.DECISIONS
         result = {
-            "validation": "Passed" if passed else "Failed",
-            "details": "; ".join(errors),
-            "validated_at": validated_at,
-            "decision": "Pending" if passed else "Rejected",
+            "validation": (
+                f"{settings.FAILED} {'; '.join(errors)}" if errors else settings.PASSED
+            ),
+            "decision": reject if errors else pending,
         }
+        if star_errors is not None:
+            result["stars"] = settings.FAILED if star_errors else settings.PASSED
         for key, value in result.items():
             self.values.append(
                 {"range": rowcol_to_a1(row, self.columns[key] + 1), "values": [[value]]}
             )
-        if passed:
+        if not errors:
             self.dropdowns.append(row)
 
     def save(self):

@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 
 from onboarding import settings
 from onboarding.checks import normalize_name, validate
@@ -116,6 +117,11 @@ class TestChecks(unittest.TestCase):
             'GitHub user "dee077" does not exist', validate(github, application())
         )
 
+    @mock.patch.object(settings, "SKIP_MEMBERSHIP_CHECK", True)
+    def test_skipped_membership_check(self):
+        self.assertEqual(validate(FakeGitHub(members={"dee077"}), application()), [])
+
+    @mock.patch.object(settings, "SKIP_MEMBERSHIP_CHECK", False)
     def test_already_member(self):
         github = FakeGitHub(members={"dee077"})
         self.assertEqual(

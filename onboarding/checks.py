@@ -100,14 +100,28 @@ def check_pull_requests(github, application):
     return errors
 
 
-def validate(github, application):
-    """Returns the reasons the application fails; an empty list means it passed.
+def run_checks(github, application):
+    """Returns the reasons the application fails for each check which ran.
 
-    Raises TemporaryError when GitHub cannot be reached.
+    The other checks do not run for an existing member. Raises
+    TemporaryError when GitHub cannot be reached.
     """
-    errors = check_membership(github, application)
-    if errors:
-        return errors
-    for check in (check_account, check_stars, check_pull_requests):
-        errors.extend(check(github, application))
-    return errors
+    if settings.SKIP_MEMBERSHIP_CHECK:
+        membership = []
+    else:
+        membership = check_membership(github, application)
+    if membership:
+        return {"membership": membership}
+    return {
+        "membership": membership,
+        "account": check_account(github, application),
+        "stars": check_stars(github, application),
+        "pull_requests": check_pull_requests(github, application),
+    }
+
+
+def validate(github, application):
+    """Returns the reasons the application fails; an empty list means it passed."""
+    return [
+        error for errors in run_checks(github, application).values() for error in errors
+    ]

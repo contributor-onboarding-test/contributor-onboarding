@@ -17,15 +17,22 @@ Contributor Onboarding
 Daily Validation
 ----------------
 
-``.github/workflows/validate.yml`` runs every day and on demand. For each
-new row of the "Form Responses 1" tab, it checks the applicant's GitHub
-account and pull requests, then writes the result to the Sheet:
+When a Form is submitted, the Apps Script of the Sheet
+(``apps-script/Code.gs``) sets its ``Validation`` and its star column
+("Have you started OpenWISP repositories") to ``Pending``, shows ``Terms
+and policies`` as ✅ when every policy was accepted, and shows its pull
+request and video links as labels, such as "Merged PR 1". The workflow
+reads the links behind the labels, and writes ✅ or ❌ in the star column
+once the stars are checked.
 
-- **Passed**: ``Validation`` is ``Passed``, and ``Decision`` gets a
-  Pending, Approved or Rejected dropdown set to Pending, for a maintainer
-  to decide.
-- **Failed**: ``Validation`` is ``Failed``, ``Validation details`` lists
-  the reasons, and ``Decision`` is ``Rejected``.
+``.github/workflows/validate.yml`` runs every day and on demand. For each
+``Pending`` row of the "Form Responses 1" tab, it checks the applicant's
+GitHub account and pull requests, then writes the result to the Sheet:
+
+- **Passed**: ``Validation`` is ✅, and ``Decision`` gets a Pending,
+  Accept or Reject dropdown set to Pending, for a maintainer to decide.
+- **Failed**: ``Validation`` is ❌ followed by the reasons, and
+  ``Decision`` is ``Reject``.
 - **GitHub unavailable**: the row is left unchanged and checked on the
   next run.
 
