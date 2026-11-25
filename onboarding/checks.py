@@ -8,12 +8,20 @@ PR_URL = re.compile(
     r"^https?://github\.com/(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+)/pull/(?P<number>\d+)"
     r"(?:[/?#].*)?$"
 )
+MARKDOWN_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+HTML_TAG = re.compile(r"<[^>]*>")
 
 
 def normalize_name(name):
     name = unicodedata.normalize("NFKD", name or "")
     name = "".join(char for char in name if not unicodedata.combining(char))
     return " ".join(name.casefold().split())
+
+
+def visible_text(text):
+    """Returns the text as GitHub shows it, so a linked word still matches."""
+    text = HTML_TAG.sub(" ", MARKDOWN_LINK.sub(r"\1", text or ""))
+    return " ".join(text.casefold().split())
 
 
 def check_account(github, application):
@@ -25,9 +33,9 @@ def check_account(github, application):
     errors = []
     if normalize_name(user.get("name")) != normalize_name(application["name"]):
         errors.append("the Name on your GitHub profile does not match your Full Name")
-    text = settings.OWNERSHIP_TEXT.casefold()
-    bio = (user.get("bio") or "").casefold()
-    if text not in bio and text not in github.profile_readme(username).casefold():
+    text = visible_text(settings.OWNERSHIP_TEXT)
+    bio = visible_text(user.get("bio"))
+    if text not in bio and text not in visible_text(github.profile_readme(username)):
         errors.append(
             f'"{settings.OWNERSHIP_TEXT}" is missing from your GitHub bio '
             "and profile README"

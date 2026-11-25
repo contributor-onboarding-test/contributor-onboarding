@@ -111,6 +111,21 @@ class TestChecks(unittest.TestCase):
             github.readmes["dee077"] = "Hi! contributing to openwisp"
             self.assertEqual(validate(github, application()), [])
 
+        for readme in (
+            "I'm currently contributing to [OpenWisp](https://github.com/openwisp)",
+            'Contributing to <a href="https://github.com/openwisp">OpenWISP</a>',
+            "Contributing\n  to   OpenWISP",
+        ):
+            with self.subTest("links, tags and line breaks are ignored", readme=readme):
+                github.readmes["dee077"] = readme
+                self.assertEqual(validate(github, application()), [])
+
+        with self.subTest("a link target alone does not count"):
+            github.readmes["dee077"] = (
+                "[docs](https://example.com/contributing-to-openwisp)"
+            )
+            self.assertEqual(len(validate(github, application())), 1)
+
     def test_unknown_user(self):
         github = FakeGitHub(users={})
         self.assertIn(
