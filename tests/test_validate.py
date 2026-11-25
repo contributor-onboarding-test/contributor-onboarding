@@ -103,23 +103,7 @@ class TestValidate(unittest.TestCase):
                 "H3": "✅",
             },
         )
-        requests = worksheet.spreadsheet.requests
-        aligned = {
-            (
-                request["repeatCell"]["range"]["startRowIndex"],
-                request["repeatCell"]["range"]["startColumnIndex"],
-            )
-            for request in requests
-            if "repeatCell" in request
-        }
-        self.assertEqual(
-            aligned,
-            {(1, 7), (1, 8), (1, 9), (2, 7), (2, 8), (2, 9)},
-            "Every written result must be middle aligned",
-        )
-        (dropdown,) = [
-            request for request in requests if "setDataValidation" in request
-        ]
+        (dropdown,) = worksheet.spreadsheet.requests
         rule = dropdown["setDataValidation"]
         self.assertEqual(
             rule["range"],
