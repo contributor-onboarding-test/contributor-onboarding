@@ -44,6 +44,9 @@ jobs:
         with:
           app-id: ${{ secrets.ONBOARDING_APP_ID }}
           private-key: ${{ secrets.ONBOARDING_APP_PRIVATE_KEY }}
+          # Membership is read at the organization level, so the App does
+          # not need access to this repository.
+          owner: ${{ github.repository_owner }}
           permission-members: read
 
       - name: Validate applications
