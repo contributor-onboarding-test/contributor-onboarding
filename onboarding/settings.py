@@ -2,9 +2,13 @@ import os
 
 GITHUB_ORG = "openwisp"
 MEMBERSHIP_ORG = os.environ.get("MEMBERSHIP_ORG", GITHUB_ORG)
-# TODO: set to False before using this outside the test organization. The
-# membership check is skipped so that its owner can test the whole flow.
-SKIP_MEMBERSHIP_CHECK = True
+# Lets an organization owner test the whole flow with their own account.
+SKIP_MEMBERSHIP_CHECK = os.environ.get("SKIP_MEMBERSHIP_CHECK", "").lower() in (
+    "1",
+    "true",
+)
+# the organization team accepted applicants are invited to
+TEAM = os.environ.get("ONBOARDING_TEAM") or "community"
 OWNERSHIP_TEXT = "Contributing to OpenWISP"
 MIN_STARS = 20
 REQUIRED_STARS = (
@@ -39,6 +43,8 @@ FORM_COLUMNS = {
 RESULT_COLUMNS = {
     "validation": "Validation",
     "decision": "Decision",
+    # Pending until the Apps Script of the Sheet sends the email of the decision
+    "email_status": "Email status",
 }
 # set by the Apps Script of the Sheet when a Form is submitted
 PENDING = "Pending"

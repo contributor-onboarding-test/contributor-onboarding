@@ -31,10 +31,27 @@ GitHub account and pull requests, then writes the result to the Sheet:
 
 - **Passed**: ``Validation`` is ✅, and ``Decision`` gets a Pending,
   Accept or Reject dropdown set to Pending, for a maintainer to decide.
-- **Failed**: ``Validation`` is ❌ followed by the reasons, and
-  ``Decision`` is ``Reject``.
+- **Failed**: ``Validation`` is ❌ followed by the reasons, ``Decision``
+  is ``Reject``, and the rejection email is queued.
 - **GitHub unavailable**: the row is left unchanged and checked on the
   next run.
+
+Decisions and Emails
+--------------------
+
+``Email status`` is empty until a decision is made. On its next run, the
+workflow handles each ``Accept`` or ``Reject`` chosen by a maintainer:
+
+- **Reject**: the rejection email is queued.
+- **Accept**: the applicant is invited to the organization's team (GitHub
+  emails the invitation), then the welcome email is queued. Only an
+  application with ``Validation`` ✅ is invited. A refused invite is shown
+  as ❌ in ``Email status``.
+
+A queued email has ``Email status`` ``Pending``. Every hour,
+``sendPendingEmails()`` in the Apps Script sends it from the account that
+owns the script, then sets ``Email status`` to ✅, or to ❌ with the
+error.
 
 The checks:
 
@@ -59,15 +76,51 @@ secrets:
 - ``GOOGLE_SERVICE_ACCOUNT``: the JSON key of a Google service account
   that can edit the Sheet.
 - ``ONBOARDING_APP_ID`` and ``ONBOARDING_APP_PRIVATE_KEY``: a GitHub App
-  installed on the organization with the Members read permission, used to
-  check whether applicants are already members.
+  installed on the organization with the Members read and write
+  permission, used to check whether applicants are already members and to
+  invite accepted ones.
 
-And the repository variable ``SHEET_ID``: the ID in the Sheet's URL.
+And these variables:
 
-Applicants are checked against the organization that owns the repository.
+- ``SHEET_ID``: the ID in the Sheet's URL.
+- ``ONBOARDING_TEAM`` (optional): the team accepted applicants are invited
+  to, ``community`` by default. It must exist.
+- ``SKIP_MEMBERSHIP_CHECK`` (optional): ``true`` skips the check that the
+  applicant is not already a member, so an organization owner can test the
+  whole flow. Do not set it in production.
+
+Applicants are checked against, and invited to, the organization that owns
+the repository.
+
+In the Sheet, the ``Form Responses 1`` tab needs the ``Validation``,
+``Decision`` and ``Email status`` columns after the Form's columns. Paste
+``apps-script/Code.gs`` into **Extensions > Apps Script**, then:
+
+- In **Project Settings > Script Properties**, set ``ORGANIZATION`` to the
+  GitHub organization, and optionally ``REPLY_TO`` to the reply address of
+  the emails.
+- In **Triggers**, add ``onFormSubmit`` (From spreadsheet, On form submit)
+  and ``sendPendingEmails`` (Time-driven, every hour).
+- Run ``processExistingRows`` once if the Form already has responses.
 
 Run the workflow manually with "dry run" enabled first: it checks the rows
-without writing to the Sheet.
+without writing to the Sheet or inviting anyone.
+
+Moving to Another Organization
+------------------------------
+
+No code changes are needed:
+
+1. Push the repository to the new organization, and create the
+   ``onboarding`` environment with the secrets and variables above.
+2. Install the organization's GitHub App with the Members read and write
+   permission, and create the team.
+3. Have the Form and the Sheet owned by the organization's account, so the
+   emails come from it: link the Form to a new Sheet, name its tab ``Form
+   Responses 1`` and add the three result columns.
+4. Paste the Apps Script, set its Script Properties and add its triggers.
+5. Leave ``SKIP_MEMBERSHIP_CHECK`` unset, then run the workflow with "dry
+   run" enabled before the first real run.
 
 Development
 -----------

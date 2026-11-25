@@ -35,7 +35,14 @@ class FakeGitHub:
             },
         }
         self.members = set()
+        self.invited = []
+        self.invite_error = None
         self.__dict__.update(overrides)
+
+    def invite(self, org, team, username):
+        if self.invite_error:
+            raise self.invite_error
+        self.invited.append((org, team, username))
 
     def user(self, username):
         if username not in self.users:

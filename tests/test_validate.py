@@ -2,7 +2,7 @@ import unittest
 from unittest import mock
 
 from onboarding import settings
-from onboarding.github import TemporaryError
+from onboarding.github import InviteError, TemporaryError
 from onboarding.sheet import Sheet, SheetError
 from onboarding.validate import run
 
@@ -86,20 +86,29 @@ class TestValidate(unittest.TestCase):
         )
         counts = run(Sheet(worksheet), FakeGitHub())
         self.assertEqual(
-            counts, {"pending": 2, "passed": 1, "failed": 1, "failed account": 1}
+            counts,
+            {
+                "pending": 2,
+                "passed": 1,
+                "failed": 1,
+                "failed account": 1,
+                "emails queued": 1,
+            },
         )
-        self.assertEqual(worksheet.col_count, 10)
+        self.assertEqual(worksheet.col_count, 11)
         self.assertEqual(
             written(worksheet),
             {
                 "I1": "Validation",
                 "J1": "Decision",
+                "K1": "Email status",
                 "I2": "✅",
                 "J2": "Pending",
                 "H2": "✅",
                 "I3": "❌ the Name on your GitHub profile does not match"
                 " your Full Name",
                 "J3": "Reject",
+                "K3": "Pending",
                 "H3": "✅",
             },
         )
@@ -124,15 +133,15 @@ class TestValidate(unittest.TestCase):
         )
 
     def test_pending_rows_are_validated(self):
-        header = HEADER + ["Validation", "Decision"]
+        header = HEADER + ["Validation", "Decision", "Email status"]
         worksheet = FakeWorksheet(
             [
                 header,
-                row() + ["pending", ""],
-                row() + ["✅", "Accept"],
-                row(name="Someone Else") + ["❌ x", "Reject"],
+                row() + ["pending", "", ""],
+                row() + ["✅", "Accept", "✅"],
+                row(name="Someone Else") + ["❌ x", "Reject", "✅"],
             ],
-            col_count=10,
+            col_count=11,
         )
         counts = run(Sheet(worksheet), FakeGitHub())
         self.assertEqual(counts, {"pending": 1, "passed": 1})
@@ -180,8 +189,57 @@ class TestValidate(unittest.TestCase):
         worksheet = FakeWorksheet([HEADER, row()])
         counts = run(Sheet(worksheet), BrokenGitHub())
         self.assertEqual(counts, {"pending": 1, "retry": 1})
-        self.assertEqual(list(written(worksheet).values()), ["Validation", "Decision"])
+        self.assertEqual(
+            list(written(worksheet).values()),
+            ["Validation", "Decision", "Email status"],
+        )
         self.assertEqual(worksheet.spreadsheet.requests, [])
+
+    def decided(self, *rows):
+        header = HEADER + ["Validation", "Decision", "Email status"]
+        return FakeWorksheet([header] + [row() + values for values in rows], 11)
+
+    def test_decisions(self):
+        worksheet = self.decided(
+            ["✅", "Accept", ""],
+            ["✅", "reject", ""],
+            ["❌ x", "Accept", ""],
+            ["✅", "Pending", ""],
+            ["✅", "Accept", "✅"],
+        )
+        github = FakeGitHub()
+        counts = run(Sheet(worksheet), github)
+        self.assertEqual(
+            counts,
+            {"invited": 1, "emails queued": 2, "accepted without passing": 1},
+        )
+        self.assertEqual(
+            github.invited, [(settings.MEMBERSHIP_ORG, "community", "dee077")]
+        )
+        self.assertEqual(written(worksheet), {"K2": "Pending", "K3": "Pending"})
+
+    def test_invite_errors(self):
+        with self.subTest("a refused invite is reported in the row"):
+            worksheet = self.decided(["✅", "Accept", ""])
+            error = InviteError("GitHub refused the invite (HTTP 422)")
+            counts = run(Sheet(worksheet), FakeGitHub(invite_error=error))
+            self.assertEqual(counts, {"invites failed": 1})
+            self.assertEqual(
+                written(worksheet), {"K2": "❌ GitHub refused the invite (HTTP 422)"}
+            )
+
+        with self.subTest("a temporary error is retried on the next run"):
+            worksheet = self.decided(["✅", "Accept", ""])
+            github = FakeGitHub(invite_error=TemporaryError("rate limited"))
+            self.assertEqual(run(Sheet(worksheet), github), {"retry": 1})
+            self.assertEqual(written(worksheet), {})
+
+    def test_dry_run_does_not_invite(self):
+        worksheet = self.decided(["✅", "Accept", ""])
+        github = FakeGitHub()
+        self.assertEqual(run(Sheet(worksheet), github, dry_run=True), {"to invite": 1})
+        self.assertEqual(github.invited, [])
+        self.assertEqual(worksheet.updates, [])
 
     def test_dry_run_writes_nothing(self):
         worksheet = FakeWorksheet([HEADER, row()])

@@ -71,6 +71,20 @@ class Sheet:
             ):
                 yield row, {key: self._cell(row, key) for key in settings.FORM_COLUMNS}
 
+    def decided(self):
+        """Yields (row, accepted, passed, username) for decided rows not emailed yet."""
+        _pending, accept, reject = settings.DECISIONS
+        for row in range(2, len(self.rows) + 1):
+            username = self._cell(row, "username")
+            decision = self._cell(row, "decision").casefold()
+            if (
+                username
+                and not self._cell(row, "email_status")
+                and decision in (accept.casefold(), reject.casefold())
+            ):
+                passed = self._cell(row, "validation") == settings.PASSED
+                yield row, decision == accept.casefold(), passed, username
+
     def set_result(self, row, errors, star_errors=None):
         """star_errors is None when the star check did not run."""
         pending, _accept, reject = settings.DECISIONS
@@ -80,14 +94,23 @@ class Sheet:
             ),
             "decision": reject if errors else pending,
         }
+        if errors:
+            # queues the email of the rejection
+            result["email_status"] = settings.PENDING
         if star_errors is not None:
             result["stars"] = settings.FAILED if star_errors else settings.PASSED
         for key, value in result.items():
-            self.values.append(
-                {"range": rowcol_to_a1(row, self.columns[key] + 1), "values": [[value]]}
-            )
+            self._write(row, key, value)
         if not errors:
             self.dropdowns.append(row)
+
+    def set_email_status(self, row, value):
+        self._write(row, "email_status", value)
+
+    def _write(self, row, key, value):
+        self.values.append(
+            {"range": rowcol_to_a1(row, self.columns[key] + 1), "values": [[value]]}
+        )
 
     def save(self):
         width = len(self.header) + len(self.new_headers)
