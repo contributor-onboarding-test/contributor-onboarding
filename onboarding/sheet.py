@@ -26,6 +26,7 @@ class Sheet:
                 self.new_headers.append((index, title))
             self.columns[key] = index
         self.values = []
+        self.cells = []
         self.dropdowns = []
 
     def _find(self, title, required=False):
@@ -86,6 +87,7 @@ class Sheet:
             self.values.append(
                 {"range": rowcol_to_a1(row, self.columns[key] + 1), "values": [[value]]}
             )
+            self.cells.append((row, self.columns[key]))
         if not errors:
             self.dropdowns.append(row)
 
@@ -99,22 +101,35 @@ class Sheet:
         ] + self.values
         if values:
             self.worksheet.batch_update(values)
-        if self.dropdowns:
-            self.worksheet.spreadsheet.batch_update(
-                {"requests": [self._dropdown(row) for row in self.dropdowns]}
-            )
+        # The Form adds each response as a new row, without the formatting of
+        # the rows above, so the results are aligned with the rest of the row.
+        requests = [self._align(row, column) for row, column in self.cells]
+        requests += [self._dropdown(row) for row in self.dropdowns]
+        if requests:
+            self.worksheet.spreadsheet.batch_update({"requests": requests})
+
+    def _range(self, row, column):
+        return {
+            "sheetId": self.worksheet.id,
+            "startRowIndex": row - 1,
+            "endRowIndex": row,
+            "startColumnIndex": column,
+            "endColumnIndex": column + 1,
+        }
+
+    def _align(self, row, column):
+        return {
+            "repeatCell": {
+                "range": self._range(row, column),
+                "cell": {"userEnteredFormat": {"verticalAlignment": "MIDDLE"}},
+                "fields": "userEnteredFormat.verticalAlignment",
+            }
+        }
 
     def _dropdown(self, row):
-        column = self.columns["decision"]
         return {
             "setDataValidation": {
-                "range": {
-                    "sheetId": self.worksheet.id,
-                    "startRowIndex": row - 1,
-                    "endRowIndex": row,
-                    "startColumnIndex": column,
-                    "endColumnIndex": column + 1,
-                },
+                "range": self._range(row, self.columns["decision"]),
                 "rule": {
                     "condition": {
                         "type": "ONE_OF_LIST",
