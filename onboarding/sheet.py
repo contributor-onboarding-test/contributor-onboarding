@@ -63,9 +63,11 @@ class Sheet:
 
     def pending(self):
         for row in range(2, len(self.rows) + 1):
-            if self._cell(row, "username") and self._cell(row, "validation") in (
+            # Maintainers can type Pending by hand to have a row checked again.
+            validation = self._cell(row, "validation").casefold()
+            if self._cell(row, "username") and validation in (
                 "",
-                settings.PENDING,
+                settings.PENDING.casefold(),
             ):
                 yield row, {key: self._cell(row, key) for key in settings.FORM_COLUMNS}
 

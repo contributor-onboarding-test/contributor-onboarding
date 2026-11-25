@@ -128,7 +128,7 @@ class TestValidate(unittest.TestCase):
         worksheet = FakeWorksheet(
             [
                 header,
-                row() + ["Pending", ""],
+                row() + ["pending", ""],
                 row() + ["✅", "Accept"],
                 row(name="Someone Else") + ["❌ x", "Reject"],
             ],
