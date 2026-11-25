@@ -1,4 +1,5 @@
 import unittest
+from datetime import date
 from unittest import mock
 
 from onboarding import settings
@@ -72,6 +73,8 @@ def application(**overrides):
         "pr1": "https://github.com/openwisp/openwisp-users/pull/1",
         "pr2": "https://github.com/openwisp/openwisp-utils/pull/2/",
         "pr3": "https://github.com/openwisp/openwisp-controller/pull/3",
+        "meeting1": date(2026, 11, 4),
+        "meeting2": date(2026, 11, 18),
     }
     data.update(overrides)
     return data
@@ -249,6 +252,29 @@ class TestChecks(unittest.TestCase):
                     "PR 3 title does not start with [fix], [change] or [feature]",
                 ],
             )
+
+    def test_meetings(self):
+        cases = (
+            (
+                {"meeting1": date(2026, 11, 3)},
+                "weekly meeting 1 on 03 November 2026 is a Tuesday, "
+                "but the meetings are on Wednesdays",
+            ),
+            ({"meeting2": None}, "weekly meeting 2 is not a date"),
+            (
+                {"meeting2": date(2026, 11, 4)},
+                "the two weekly meetings have the same date",
+            ),
+            (
+                {"meeting2": date(2099, 11, 4)},
+                "weekly meeting 2 on 04 November 2099 is in the future",
+            ),
+        )
+        for overrides, error in cases:
+            with self.subTest(error):
+                self.assertEqual(
+                    validate(FakeGitHub(), application(**overrides)), [error]
+                )
 
     def test_temporary_error_is_raised(self):
         class BrokenGitHub(FakeGitHub):

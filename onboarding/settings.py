@@ -39,7 +39,11 @@ FORM_COLUMNS = {
     "pr3": "Merged PR Link 3 (Networking module)",
     # shows the result of the star check
     "stars": "Have you started OpenWISP repositories",
+    "meeting1": "Weekly meeting 1",
+    "meeting2": "Weekly meeting 2",
 }
+# Form dates, read as dates rather than as text formatted for the Sheet's locale
+DATE_COLUMNS = ("meeting1", "meeting2")
 RESULT_COLUMNS = {
     "validation": "Validation",
     "decision": "Decision",

@@ -64,6 +64,8 @@ The checks:
 - The three pull requests are different, merged and opened by the
   applicant in OpenWISP repositories. The third one is in a networking
   module, with a ``[fix]``, ``[change]`` or ``[feature]`` title.
+- The two weekly meeting dates are different Wednesdays, not in the
+  future. Attendance itself cannot be verified.
 
 Logs only show counts, never applicant data.
 

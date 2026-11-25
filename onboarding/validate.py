@@ -81,7 +81,7 @@ def main():
         f"passed: {counts['passed']}, failed: {counts['failed']}, "
         f"retry next run: {counts['retry']}"
     )
-    for name in ("membership", "account", "stars", "pull_requests"):
+    for name in ("membership", "account", "stars", "pull_requests", "meetings"):
         print(f"failed {name.replace('_', ' ')} check: {counts[f'failed {name}']}")
     if dry_run:
         print(f"to invite: {counts['to invite']}")

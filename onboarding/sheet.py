@@ -1,6 +1,11 @@
-from gspread.utils import absolute_range_name, rowcol_to_a1
+from datetime import date, timedelta
+
+from gspread.utils import ValueRenderOption, absolute_range_name, rowcol_to_a1
 
 from . import settings
+
+# Sheets stores a date as the number of days since this one.
+SHEETS_EPOCH = date(1899, 12, 30)
 
 
 class SheetError(Exception):
@@ -13,6 +18,9 @@ class Sheet:
     def __init__(self, worksheet):
         self.worksheet = worksheet
         self.rows = worksheet.get_all_values()
+        self.raw_rows = worksheet.get_all_values(
+            value_render_option=ValueRenderOption.unformatted
+        )
         self.header = self.rows[0] if self.rows else []
         self.links = self._links()
         self.columns = {}
@@ -69,7 +77,21 @@ class Sheet:
                 "",
                 settings.PENDING.casefold(),
             ):
-                yield row, {key: self._cell(row, key) for key in settings.FORM_COLUMNS}
+                application = {
+                    key: self._cell(row, key) for key in settings.FORM_COLUMNS
+                }
+                for key in settings.DATE_COLUMNS:
+                    application[key] = self._date(row, key)
+                yield row, application
+
+    def _date(self, row, key):
+        """Returns None when the cell does not hold a date."""
+        values = self.raw_rows[row - 1]
+        index = self.columns[key]
+        value = values[index] if index < len(values) else ""
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return SHEETS_EPOCH + timedelta(days=int(value))
 
     def decided(self):
         """Yields (row, accepted, passed, username) for decided rows not emailed yet."""

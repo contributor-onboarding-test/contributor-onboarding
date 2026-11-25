@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from datetime import date
 
 from . import settings
 from .github import NotFound
@@ -9,6 +10,7 @@ PR_URL = re.compile(
     r"^https://github\.com/(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+)/pull/(?P<number>\d+)/?$"
 )
 PR_URL_EXAMPLE = "https://github.com/openwisp/<repository>/pull/123"
+WEDNESDAY = 2
 MARKDOWN_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
 HTML_TAG = re.compile(r"<[^>]*>")
 
@@ -114,6 +116,25 @@ def check_pull_requests(github, application):
     return errors
 
 
+def check_meetings(application):
+    """Attendance cannot be verified, so only the dates are: the weekly meetings are held on Wednesdays."""
+    errors = []
+    dates = [application["meeting1"], application["meeting2"]]
+    for number, day in enumerate(dates, start=1):
+        if day is None:
+            errors.append(f"weekly meeting {number} is not a date")
+        elif day.weekday() != WEDNESDAY:
+            errors.append(
+                f"weekly meeting {number} on {day:%d %B %Y} is a {day:%A}, "
+                "but the meetings are on Wednesdays"
+            )
+        elif day > date.today():
+            errors.append(f"weekly meeting {number} on {day:%d %B %Y} is in the future")
+    if dates[0] is not None and dates[0] == dates[1]:
+        errors.append("the two weekly meetings have the same date")
+    return errors
+
+
 def run_checks(github, application):
     """Returns the reasons the application fails for each check which ran.
 
@@ -131,6 +152,7 @@ def run_checks(github, application):
         "account": check_account(github, application),
         "stars": check_stars(github, application),
         "pull_requests": check_pull_requests(github, application),
+        "meetings": check_meetings(application),
     }
 
 

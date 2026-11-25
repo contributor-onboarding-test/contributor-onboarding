@@ -1,4 +1,5 @@
 import unittest
+from datetime import date, datetime
 from unittest import mock
 
 from onboarding import settings
@@ -17,6 +18,8 @@ HEADER = [
     "Merged PR Link 2",
     "Merged PR Link 3 (Networking module)",
     "Have you started OpenWISP repositories",
+    "Weekly meeting 1",
+    "Weekly meeting 2",
 ]
 
 
@@ -30,7 +33,18 @@ def row(name="Deepanshu Sahu", username="dee077"):
         "https://github.com/openwisp/openwisp-utils/pull/2",
         "https://github.com/openwisp/openwisp-controller/pull/3",
         "Pending",
+        "11/4/2026",
+        "11/18/2026",
     ]
+
+
+def unformatted(value):
+    """Returns the value as the Sheets API does without formatting."""
+    try:
+        day = datetime.strptime(value, "%m/%d/%Y").date()
+    except ValueError:
+        return value
+    return (day - date(1899, 12, 30)).days
 
 
 class FakeSpreadsheet:
@@ -59,14 +73,16 @@ class FakeWorksheet:
     id = 7
     title = "Form Responses 1"
 
-    def __init__(self, rows, col_count=8, links=None):
+    def __init__(self, rows, col_count=10, links=None):
         self.rows = rows
         self.col_count = col_count
         self.updates = []
         self.spreadsheet = FakeSpreadsheet(links or {})
 
-    def get_all_values(self):
-        return self.rows
+    def get_all_values(self, value_render_option=None):
+        if value_render_option is None:
+            return self.rows
+        return [[unformatted(value) for value in row] for row in self.rows]
 
     def add_cols(self, count):
         self.col_count += count
@@ -95,20 +111,20 @@ class TestValidate(unittest.TestCase):
                 "emails queued": 1,
             },
         )
-        self.assertEqual(worksheet.col_count, 11)
+        self.assertEqual(worksheet.col_count, 13)
         self.assertEqual(
             written(worksheet),
             {
-                "I1": "Validation",
-                "J1": "Decision",
-                "K1": "Email status",
-                "I2": "✅",
-                "J2": "Pending",
+                "K1": "Validation",
+                "L1": "Decision",
+                "M1": "Email status",
+                "K2": "✅",
+                "L2": "Pending",
                 "H2": "✅",
-                "I3": "❌ the Name on your GitHub profile does not match"
+                "K3": "❌ the Name on your GitHub profile does not match"
                 " your Full Name",
-                "J3": "Reject",
-                "K3": "Pending",
+                "L3": "Reject",
+                "M3": "Pending",
                 "H3": "✅",
             },
         )
@@ -121,8 +137,8 @@ class TestValidate(unittest.TestCase):
                 "sheetId": 7,
                 "startRowIndex": 1,
                 "endRowIndex": 2,
-                "startColumnIndex": 9,
-                "endColumnIndex": 10,
+                "startColumnIndex": 11,
+                "endColumnIndex": 12,
             },
         )
         self.assertEqual(
@@ -142,11 +158,11 @@ class TestValidate(unittest.TestCase):
                 row() + ["✅", "Accept", "✅"],
                 row(name="Someone Else") + ["❌ x", "Reject", "✅"],
             ],
-            col_count=11,
+            col_count=13,
         )
         counts = run(Sheet(worksheet), FakeGitHub())
         self.assertEqual(counts, {"pending": 1, "passed": 1})
-        self.assertEqual(written(worksheet), {"I2": "✅", "J2": "Pending", "H2": "✅"})
+        self.assertEqual(written(worksheet), {"K2": "✅", "L2": "Pending", "H2": "✅"})
 
     def test_star_column(self):
         with self.subTest("failed star check"):
@@ -198,7 +214,7 @@ class TestValidate(unittest.TestCase):
 
     def decided(self, *rows):
         header = HEADER + ["Validation", "Decision", "Email status"]
-        return FakeWorksheet([header] + [row() + values for values in rows], 11)
+        return FakeWorksheet([header] + [row() + values for values in rows], 13)
 
     def test_decisions(self):
         worksheet = self.decided(
@@ -217,7 +233,7 @@ class TestValidate(unittest.TestCase):
         self.assertEqual(
             github.invited, [(settings.MEMBERSHIP_ORG, "community", "dee077")]
         )
-        self.assertEqual(written(worksheet), {"K2": "Pending", "K3": "Pending"})
+        self.assertEqual(written(worksheet), {"M2": "Pending", "M3": "Pending"})
 
     def test_invite_errors(self):
         with self.subTest("a refused invite is reported in the row"):
@@ -226,7 +242,7 @@ class TestValidate(unittest.TestCase):
             counts = run(Sheet(worksheet), FakeGitHub(invite_error=error))
             self.assertEqual(counts, {"invites failed": 1})
             self.assertEqual(
-                written(worksheet), {"K2": "❌ GitHub refused the invite (HTTP 422)"}
+                written(worksheet), {"M2": "❌ GitHub refused the invite (HTTP 422)"}
             )
 
         with self.subTest("a temporary error is retried on the next run"):
@@ -247,7 +263,17 @@ class TestValidate(unittest.TestCase):
         counts = run(Sheet(worksheet), FakeGitHub(), dry_run=True)
         self.assertEqual(counts, {"pending": 1, "passed": 1})
         self.assertEqual(worksheet.updates, [])
-        self.assertEqual(worksheet.col_count, 8)
+        self.assertEqual(worksheet.col_count, 10)
+
+    def test_meeting_dates_are_read_as_dates(self):
+        worksheet = FakeWorksheet([HEADER, row()[:8] + ["11/5/2026", "not a date"]])
+        counts = run(Sheet(worksheet), FakeGitHub())
+        self.assertEqual(counts["failed meetings"], 1)
+        self.assertEqual(
+            written(worksheet)["K2"],
+            "❌ weekly meeting 1 on 05 November 2026 is a Thursday, but the "
+            "meetings are on Wednesdays; weekly meeting 2 is not a date",
+        )
 
     def test_columns(self):
         with self.subTest("a missing Form column"):
