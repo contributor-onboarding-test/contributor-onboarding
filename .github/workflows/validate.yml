@@ -2,7 +2,7 @@ name: Validate applications
 
 on:
   schedule:
-    - cron: "21 11 * * *"
+    - cron: "7 12 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -12,8 +12,9 @@ on:
 
 permissions: {}
 
+# Shared with the weekly review, so only one of them writes to the Sheet at a time.
 concurrency:
-  group: validate-applications
+  group: onboarding-sheet
   cancel-in-progress: false
 
 jobs:
