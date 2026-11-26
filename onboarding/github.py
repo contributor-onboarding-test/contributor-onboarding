@@ -17,6 +17,10 @@ class InviteError(Exception):
     """GitHub refused the invite, so retrying it would not help."""
 
 
+class RemovalError(Exception):
+    """GitHub refused to remove the member, so retrying it would not help."""
+
+
 class GitHub:
     def __init__(self, token=None, membership_token=None, session=None):
         if session is None:
@@ -58,6 +62,40 @@ class GitHub:
     def user(self, username):
         return self._request(f"/users/{username}").json()
 
+    def login(self, user_id):
+        """Returns the current username of an account, which its owner can change."""
+        return self._request(f"/user/{user_id}").json()["login"]
+
+    def graphql(self, query, token=None, **variables):
+        response = self._request(
+            "/graphql",
+            token=token,
+            method="POST",
+            json={"query": query, "variables": variables},
+        ).json()
+        errors = response.get("errors")
+        if errors:
+            if all(error.get("type") == "NOT_FOUND" for error in errors):
+                raise NotFound(errors[0].get("message", ""))
+            # GraphQL reports rate limits and timeouts as errors with HTTP 200.
+            raise TemporaryError(errors[0].get("message", "GraphQL error"))
+        return response["data"]
+
+    def organization_id(self, org):
+        query = "query($org: String!) { organization(login: $org) { id } }"
+        return self.graphql(query, org=org)["organization"]["id"]
+
+    def teams(self, org, username):
+        query = """
+            query($org: String!, $login: String!) {
+              organization(login: $org) {
+                teams(first: 100, userLogins: [$login]) { nodes { slug } }
+              }
+            }
+        """
+        data = self.graphql(query, token=self.membership_token, org=org, login=username)
+        return [team["slug"] for team in data["organization"]["teams"]["nodes"]]
+
     def profile_readme(self, username):
         try:
             return self._request(f"/repos/{username}/{username}/readme", raw=True).text
@@ -94,11 +132,23 @@ class GitHub:
                 f"GitHub refused the invite (HTTP {error.response.status_code})"
             ) from error
 
-    def is_member(self, org, username):
+    def remove_member(self, org, username):
         try:
             self._request(
-                f"/orgs/{org}/memberships/{username}", token=self.membership_token
+                f"/orgs/{org}/memberships/{username}",
+                token=self.membership_token,
+                method="DELETE",
             )
+        except requests.HTTPError as error:
+            raise RemovalError(
+                f"GitHub refused the removal (HTTP {error.response.status_code})"
+            ) from error
+
+    def membership(self, org, username):
+        """Returns None when the user is neither a member nor invited."""
+        try:
+            return self._request(
+                f"/orgs/{org}/memberships/{username}", token=self.membership_token
+            ).json()
         except NotFound:
-            return False
-        return True
+            return None

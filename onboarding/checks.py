@@ -52,9 +52,16 @@ def check_account(github, application):
 
 
 def check_membership(github, application):
-    if github.is_member(settings.MEMBERSHIP_ORG, application["username"]):
-        return [f"you are already a member of {settings.MEMBERSHIP_ORG}"]
-    return []
+    org = settings.MEMBERSHIP_ORG
+    membership = github.membership(org, application["username"])
+    if membership is None:
+        return []
+    if membership["state"] == "pending":
+        return [
+            f"you already have a pending invitation to {org}: accept it at "
+            f"https://github.com/orgs/{org}/invitation"
+        ]
+    return [f"you are already a member of {org}"]
 
 
 def check_stars(github, application):

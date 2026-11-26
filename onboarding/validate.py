@@ -2,17 +2,51 @@ import json
 import os
 import sys
 from collections import Counter
+from datetime import date
 
 import gspread
 
 from . import settings
 from .checks import run_checks
 from .github import GitHub, InviteError, TemporaryError
+from .members import Members, open_members
 from .sheet import Sheet
 
 
-def run(sheet, github, dry_run=False):
+def check_invites(sheet, members, github, today, counts):
+    """Records who joined, so the weekly review checks their activity."""
+    for row, applicant in sheet.invited():
+        try:
+            membership = github.membership(
+                settings.MEMBERSHIP_ORG, applicant["username"]
+            )
+            if membership and membership["state"] == "active":
+                github_id = str(github.user(applicant["username"])["id"])
+        except TemporaryError:
+            counts["retry"] += 1
+            continue
+        if membership is None:
+            sheet.set_invite_status(row, settings.EXPIRED)
+            counts["invites expired"] += 1
+        elif membership["state"] == "active":
+            sheet.set_invite_status(row, settings.JOINED)
+            counts["joined"] += 1
+            if github_id not in members.ids():
+                members.add(
+                    {
+                        "github_id": github_id,
+                        **applicant,
+                        "joined": today.isoformat(),
+                    }
+                )
+
+
+def run(sheet, github, dry_run=False, today=None):
+    spreadsheet = sheet.worksheet.spreadsheet
+    members = Members(open_members(spreadsheet, create=False))
+    today = today or date.today()
     counts = Counter()
+    check_invites(sheet, members, github, today, counts)
     for row, application in sheet.pending():
         counts["pending"] += 1
         try:
@@ -49,18 +83,20 @@ def run(sheet, github, dry_run=False):
                 counts["invites failed"] += 1
                 continue
             sheet.set_email_status(row, settings.PENDING)
+            sheet.set_invite_status(row, settings.INVITED)
             counts["invited"] += 1
             counts["emails queued"] += 1
     if not dry_run:
         sheet.save()
+        members.save(spreadsheet)
     return counts
 
 
-def open_worksheet():
+def open_spreadsheet():
     client = gspread.service_account_from_dict(
         json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT"])
     )
-    return client.open_by_key(os.environ["SHEET_ID"]).worksheet(settings.WORKSHEET)
+    return client.open_by_key(os.environ["SHEET_ID"])
 
 
 def main():
@@ -71,7 +107,7 @@ def main():
     )
     # Logs show counts only: the applications contain personal data.
     print("Reading the Sheet")
-    sheet = Sheet(open_worksheet())
+    sheet = Sheet(open_spreadsheet().worksheet(settings.WORKSHEET))
     print(f"Applications: {max(len(sheet.rows) - 1, 0)}")
     if settings.SKIP_MEMBERSHIP_CHECK:
         print("The membership check is skipped")
@@ -91,6 +127,7 @@ def main():
         )
     print(f"accepted without passing the checks: {counts['accepted without passing']}")
     print(f"emails queued: {counts['emails queued']}")
+    print(f"joined: {counts['joined']}, invites expired: {counts['invites expired']}")
     if dry_run:
         print("Dry run: nothing was written to the Sheet")
     else:

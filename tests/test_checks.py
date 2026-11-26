@@ -36,9 +36,41 @@ class FakeGitHub:
             },
         }
         self.members = set()
+        self.pending_invites = set()
+        self.owners = set()
+        self.ids = {"dee077": 1}
+        self.user_teams = {}
         self.invited = []
+        self.removed = []
         self.invite_error = None
+        self.removal_error = None
         self.__dict__.update(overrides)
+
+    def membership(self, org, username):
+        if username in self.pending_invites:
+            return {"state": "pending", "role": "member"}
+        if username in self.members:
+            role = "admin" if username in self.owners else "member"
+            return {"state": "active", "role": role}
+        return None
+
+    def login(self, user_id):
+        for username, value in self.ids.items():
+            if str(value) == str(user_id):
+                return username
+        raise NotFound(user_id)
+
+    def organization_id(self, org):
+        return "ORG_ID"
+
+    def teams(self, org, username):
+        return self.user_teams.get(username, ["community"])
+
+    def remove_member(self, org, username):
+        if self.removal_error:
+            raise self.removal_error
+        self.removed.append((org, username))
+        self.members.discard(username)
 
     def invite(self, org, team, username):
         if self.invite_error:
@@ -48,7 +80,7 @@ class FakeGitHub:
     def user(self, username):
         if username not in self.users:
             raise NotFound(username)
-        return self.users[username]
+        return {"id": self.ids.get(username, 0), **self.users[username]}
 
     def profile_readme(self, username):
         return self.readmes.get(username, "")
@@ -60,9 +92,6 @@ class FakeGitHub:
         if (repo, number) not in self.pulls:
             raise NotFound(repo)
         return self.pulls[(repo, number)]
-
-    def is_member(self, org, username):
-        return username in self.members
 
 
 def application(**overrides):
@@ -155,6 +184,18 @@ class TestChecks(unittest.TestCase):
         self.assertEqual(
             validate(github, application()),
             [f"you are already a member of {settings.MEMBERSHIP_ORG}"],
+        )
+
+    @mock.patch.object(settings, "SKIP_MEMBERSHIP_CHECK", False)
+    def test_pending_invitation(self):
+        github = FakeGitHub(pending_invites={"dee077"})
+        org = settings.MEMBERSHIP_ORG
+        self.assertEqual(
+            validate(github, application()),
+            [
+                f"you already have a pending invitation to {org}: accept it at "
+                f"https://github.com/orgs/{org}/invitation"
+            ],
         )
 
     def test_stars(self):

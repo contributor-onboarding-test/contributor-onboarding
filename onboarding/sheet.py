@@ -107,6 +107,14 @@ class Sheet:
                 passed = self._cell(row, "validation") == settings.PASSED
                 yield row, decision == accept.casefold(), passed, username
 
+    def invited(self):
+        """Yields the rows invited to the organization who have not joined yet."""
+        for row in range(2, len(self.rows) + 1):
+            if self._cell(row, "invite_status") == settings.INVITED:
+                yield row, {
+                    key: self._cell(row, key) for key in ("username", "name", "email")
+                }
+
     def set_result(self, row, errors, star_errors=None):
         """star_errors is None when the star check did not run."""
         pending, _accept, reject = settings.DECISIONS
@@ -128,6 +136,9 @@ class Sheet:
 
     def set_email_status(self, row, value):
         self._write(row, "email_status", value)
+
+    def set_invite_status(self, row, value):
+        self._write(row, "invite_status", value)
 
     def _write(self, row, key, value):
         self.values.append(

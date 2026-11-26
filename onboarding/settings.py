@@ -49,7 +49,37 @@ RESULT_COLUMNS = {
     "decision": "Decision",
     # Pending until the Apps Script of the Sheet sends the email of the decision
     "email_status": "Email status",
+    "invite_status": "Invite status",
 }
+INVITED = "Invited"
+JOINED = "Joined"
+# GitHub drops an invitation once it expires after 7 days, or is declined.
+EXPIRED = "Expired"
+
+# Members who joined through the Form, kept after the weekly cleanup removes
+# their application. Dates are written as YYYY-MM-DD text.
+MEMBERS_WORKSHEET = os.environ.get("MEMBERS_WORKSHEET", "Members")
+MEMBER_COLUMNS = {
+    # the username can change, the ID of the account cannot
+    "github_id": "GitHub ID",
+    "username": "Username",
+    "name": "Full Name",
+    "email": "Email",
+    "joined": "Joined on",
+    "last_activity": "Last activity",
+    "warned": "Warned on",
+    "removed": "Removed on",
+    "exempt": "Exempt",
+    "note": "Note",
+    # Pending until the Apps Script sends the warning or the removal email
+    "email_status": "Email status",
+}
+# the inactivity policy of the issue, in days
+WARN_AFTER = 30
+REMOVE_AFTER = 90
+REMOVE_AFTER_WARNING = 30
+# Removals stay a dry run until the results have been reviewed.
+REMOVE_INACTIVE = os.environ.get("REMOVE_INACTIVE", "").lower() in ("1", "true")
 # set by the Apps Script of the Sheet when a Form is submitted
 PENDING = "Pending"
 PASSED = "✅"

@@ -36,26 +36,10 @@ GitHub account and pull requests, then writes the result to the Sheet:
 - **GitHub unavailable**: the row is left unchanged and checked on the
   next run.
 
-Decisions and Emails
---------------------
-
-``Email status`` is empty until a decision is made. On its next run, the
-workflow handles each ``Accept`` or ``Reject`` chosen by a maintainer:
-
-- **Reject**: the rejection email is queued.
-- **Accept**: the applicant is invited to the organization's team (GitHub
-  emails the invitation), then the welcome email is queued. Only an
-  application with ``Validation`` ✅ is invited. A refused invite is shown
-  as ❌ in ``Email status``.
-
-A queued email has ``Email status`` ``Pending``. Every hour,
-``sendPendingEmails()`` in the Apps Script sends it from the account that
-owns the script, then sets ``Email status`` to ✅, or to ❌ with the
-error.
-
 The checks:
 
-- The applicant is not already a member of the organization.
+- The applicant is not already a member of the organization, nor invited
+  to it.
 - The GitHub profile Name matches the Form's Full Name, ignoring case,
   spacing and accents.
 - The GitHub bio or profile README contains "Contributing to OpenWISP".
@@ -69,6 +53,62 @@ The checks:
 
 Logs only show counts, never applicant data.
 
+Decisions and Emails
+--------------------
+
+``Email status`` is empty until a decision is made. On its next run, the
+workflow handles each ``Accept`` or ``Reject`` chosen by a maintainer:
+
+- **Reject**: the rejection email is queued.
+- **Accept**: the applicant is invited to the organization's team (GitHub
+  emails the invitation), then the welcome email is queued. Only an
+  application with ``Validation`` ✅ is invited. A refused invite is shown
+  as ❌ in ``Email status``.
+
+To accept an application that failed a check which could not be verified,
+such as the stars of a private profile, type ✅ in ``Validation``, clear
+``Email status`` and select ``Accept``.
+
+``Invite status`` is ``Invited`` until the applicant joins. Each run then
+sets it to ``Joined``, and adds the member to the ``Members`` tab, or to
+``Expired`` once GitHub drops the invitation, after 7 days or when it is
+declined. An applicant whose invitation expired must apply again.
+
+A queued email has ``Email status`` ``Pending``. On a time-driven trigger,
+for example every 2 hours, ``sendPendingEmails()`` in the Apps Script
+sends it from the account that owns the script, then sets ``Email status``
+to ✅, or to ❌ with the error.
+
+Weekly Inactivity Review
+------------------------
+
+``.github/workflows/inactivity.yml`` runs every Monday and on demand. It
+checks the members of the ``Members`` tab, which keeps them after their
+application is removed. Each member is followed by the ID of their GitHub
+account, so a renamed account is still found.
+
+Activity is counted in the ``openwisp`` repositories: opening a pull
+request, an issue or a discussion, reviewing a pull request, commenting on
+an issue, a pull request or a discussion, or adding a commit to one's open
+pull request. Each action counts on its own date, never on the "updated"
+date of an issue or pull request, which other people can change. A member
+without activity is counted from the day they joined.
+
+- **30 days without activity**: ``Warned on`` is set and the warning email
+  is queued. Activity after the warning clears it.
+- **90 days without activity, and at least 30 days after the warning**:
+  the member is removed from the organization, ``Removed on`` is set and
+  the removal email is queued.
+- **Not removed automatically**: owners of the organization, members of
+  other teams, and members with ``Exempt`` checked. ``Note`` explains why
+  a member needs a maintainer's review.
+- **Left the organization**: ``Removed on`` is set, without an email.
+- **GitHub unavailable**: the member is checked again the next week.
+
+Removals are a dry run until the ``REMOVE_INACTIVE`` variable is ``true``:
+``Note`` shows "would be removed" instead. Review a few weeks of results
+before enabling them.
+
 Setup
 -----
 
@@ -79,8 +119,8 @@ secrets:
   that can edit the Sheet.
 - ``ONBOARDING_APP_ID`` and ``ONBOARDING_APP_PRIVATE_KEY``: a GitHub App
   installed on the organization with the Members read and write
-  permission, used to check whether applicants are already members and to
-  invite accepted ones.
+  permission, used to check whether applicants are already members, to
+  invite accepted ones and to remove inactive ones.
 
 And these variables:
 
@@ -90,23 +130,26 @@ And these variables:
 - ``SKIP_MEMBERSHIP_CHECK`` (optional): ``true`` skips the check that the
   applicant is not already a member, so an organization owner can test the
   whole flow. Do not set it in production.
+- ``REMOVE_INACTIVE`` (optional): ``true`` lets the weekly review remove
+  inactive members.
 
 Applicants are checked against, and invited to, the organization that owns
 the repository.
 
-In the Sheet, the ``Form Responses 1`` tab needs the ``Validation``,
-``Decision`` and ``Email status`` columns after the Form's columns. Paste
-``apps-script/Code.gs`` into **Extensions > Apps Script**, then:
+The workflows add the ``Validation``, ``Decision``, ``Email status`` and
+``Invite status`` columns after the Form's columns of the ``Form Responses
+1`` tab, and create the ``Members`` tab when the first applicant joins.
+Paste ``apps-script/Code.gs`` into **Extensions > Apps Script**, then:
 
 - In **Project Settings > Script Properties**, set ``ORGANIZATION`` to the
   GitHub organization, and optionally ``REPLY_TO`` to the reply address of
   the emails.
 - In **Triggers**, add ``onFormSubmit`` (From spreadsheet, On form submit)
-  and ``sendPendingEmails`` (Time-driven, every hour).
+  and ``sendPendingEmails`` (Time-driven, for example every 2 hours).
 - Run ``processExistingRows`` once if the Form already has responses.
 
-Run the workflow manually with "dry run" enabled first: it checks the rows
-without writing to the Sheet or inviting anyone.
+Run the workflows manually with "dry run" enabled first: they check the
+rows without writing to the Sheet, inviting or removing anyone.
 
 Moving to Another Organization
 ------------------------------
@@ -118,11 +161,11 @@ No code changes are needed:
 2. Install the organization's GitHub App with the Members read and write
    permission, and create the team.
 3. Have the Form and the Sheet owned by the organization's account, so the
-   emails come from it: link the Form to a new Sheet, name its tab ``Form
-   Responses 1`` and add the three result columns.
+   emails come from it: link the Form to a new Sheet and name its tab
+   ``Form Responses 1``.
 4. Paste the Apps Script, set its Script Properties and add its triggers.
-5. Leave ``SKIP_MEMBERSHIP_CHECK`` unset, then run the workflow with "dry
-   run" enabled before the first real run.
+5. Leave ``SKIP_MEMBERSHIP_CHECK`` and ``REMOVE_INACTIVE`` unset, then run
+   the workflows with "dry run" enabled before the first real run.
 
 Development
 -----------

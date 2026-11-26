@@ -2,6 +2,8 @@ import unittest
 from datetime import date, datetime
 from unittest import mock
 
+from gspread.exceptions import WorksheetNotFound
+
 from onboarding import settings
 from onboarding.github import InviteError, TemporaryError
 from onboarding.sheet import Sheet, SheetError
@@ -21,6 +23,7 @@ HEADER = [
     "Weekly meeting 1",
     "Weekly meeting 2",
 ]
+RESULTS = ["Validation", "Decision", "Email status", "Invite status"]
 
 
 def row(name="Deepanshu Sahu", username="dee077"):
@@ -52,6 +55,16 @@ class FakeSpreadsheet:
         self.links = links
         self.requests = []
         self.params = None
+        self.worksheets = {}
+
+    def worksheet(self, title):
+        if title not in self.worksheets:
+            raise WorksheetNotFound(title)
+        return self.worksheets[title]
+
+    def add_worksheet(self, title, rows, cols):
+        self.worksheets[title] = FakeWorksheet([], col_count=cols)
+        return self.worksheets[title]
 
     def batch_update(self, body):
         self.requests.extend(body["requests"])
@@ -90,6 +103,9 @@ class FakeWorksheet:
     def batch_update(self, values):
         self.updates.extend(values)
 
+    def append_rows(self, rows, value_input_option):
+        self.rows = self.rows + rows
+
 
 def written(worksheet):
     return {update["range"]: update["values"][0][0] for update in worksheet.updates}
@@ -111,13 +127,14 @@ class TestValidate(unittest.TestCase):
                 "emails queued": 1,
             },
         )
-        self.assertEqual(worksheet.col_count, 13)
+        self.assertEqual(worksheet.col_count, 14)
         self.assertEqual(
             written(worksheet),
             {
                 "K1": "Validation",
                 "L1": "Decision",
                 "M1": "Email status",
+                "N1": "Invite status",
                 "K2": "✅",
                 "L2": "Pending",
                 "H2": "✅",
@@ -150,7 +167,7 @@ class TestValidate(unittest.TestCase):
         )
 
     def test_pending_rows_are_validated(self):
-        header = HEADER + ["Validation", "Decision", "Email status"]
+        header = HEADER + RESULTS
         worksheet = FakeWorksheet(
             [
                 header,
@@ -158,7 +175,7 @@ class TestValidate(unittest.TestCase):
                 row() + ["✅", "Accept", "✅"],
                 row(name="Someone Else") + ["❌ x", "Reject", "✅"],
             ],
-            col_count=13,
+            col_count=14,
         )
         counts = run(Sheet(worksheet), FakeGitHub())
         self.assertEqual(counts, {"pending": 1, "passed": 1})
@@ -208,13 +225,13 @@ class TestValidate(unittest.TestCase):
         self.assertEqual(counts, {"pending": 1, "retry": 1})
         self.assertEqual(
             list(written(worksheet).values()),
-            ["Validation", "Decision", "Email status"],
+            RESULTS,
         )
         self.assertEqual(worksheet.spreadsheet.requests, [])
 
     def decided(self, *rows):
-        header = HEADER + ["Validation", "Decision", "Email status"]
-        return FakeWorksheet([header] + [row() + values for values in rows], 13)
+        header = HEADER + RESULTS
+        return FakeWorksheet([header] + [row() + values for values in rows], 14)
 
     def test_decisions(self):
         worksheet = self.decided(
@@ -233,7 +250,9 @@ class TestValidate(unittest.TestCase):
         self.assertEqual(
             github.invited, [(settings.MEMBERSHIP_ORG, "community", "dee077")]
         )
-        self.assertEqual(written(worksheet), {"M2": "Pending", "M3": "Pending"})
+        self.assertEqual(
+            written(worksheet), {"M2": "Pending", "N2": "Invited", "M3": "Pending"}
+        )
 
     def test_invite_errors(self):
         with self.subTest("a refused invite is reported in the row"):
@@ -250,6 +269,44 @@ class TestValidate(unittest.TestCase):
             github = FakeGitHub(invite_error=TemporaryError("rate limited"))
             self.assertEqual(run(Sheet(worksheet), github), {"retry": 1})
             self.assertEqual(written(worksheet), {})
+
+    def test_invites_are_followed(self):
+        worksheet = FakeWorksheet(
+            [
+                HEADER + RESULTS,
+                row() + ["✅", "Accept", "✅", "Invited"],
+                row(username="gone") + ["✅", "Accept", "✅", "Invited"],
+                row(username="waiting") + ["✅", "Accept", "✅", "Invited"],
+            ],
+            col_count=14,
+        )
+        github = FakeGitHub(members={"dee077"}, pending_invites={"waiting"})
+        counts = run(Sheet(worksheet), github, today=date(2026, 11, 26))
+        self.assertEqual(counts, {"joined": 1, "invites expired": 1})
+        self.assertEqual(written(worksheet), {"N2": "Joined", "N3": "Expired"})
+        members = worksheet.spreadsheet.worksheets["Members"]
+        self.assertEqual(
+            members.rows,
+            [
+                list(settings.MEMBER_COLUMNS.values()),
+                ["1", "dee077", "Deepanshu Sahu", "d@example.com", "2026-11-26"]
+                + [""] * 6,
+            ],
+        )
+        (checkbox,) = worksheet.spreadsheet.requests
+        self.assertEqual(checkbox["setDataValidation"]["range"]["startColumnIndex"], 8)
+
+        with self.subTest("a member is added once"):
+            worksheet.rows[1][-1] = "Invited"
+            run(Sheet(worksheet), github, today=date(2026, 11, 27))
+            self.assertEqual(len(members.rows), 2)
+
+        with self.subTest("a dry run does not create the Members tab"):
+            worksheet.rows[1][-1] = "Invited"
+            del worksheet.spreadsheet.worksheets["Members"]
+            counts = run(Sheet(worksheet), github, dry_run=True)
+            self.assertEqual(counts["joined"], 1)
+            self.assertEqual(worksheet.spreadsheet.worksheets, {})
 
     def test_dry_run_does_not_invite(self):
         worksheet = self.decided(["✅", "Accept", ""])

@@ -1,4 +1,6 @@
 const SHEET_NAME = "Form Responses 1";
+// created by the daily workflow when the first applicant joins
+const MEMBERS_SHEET_NAME = "Members";
 const PENDING = "Pending";
 const PASSED = "✅";
 const FAILED = "❌";
@@ -176,19 +178,16 @@ function rejectionEmail(name, validation) {
 }
 
 function welcomeEmail(name, username) {
-  const organization = getProperty("ORGANIZATION");
-  if (!organization) {
-    throw new Error("Set the ORGANIZATION Script Property");
-  }
+  const org = organization();
   return {
     subject: "Welcome to the OpenWISP community",
     body: [
       `Hi ${name},`,
       "",
       `Your application has been accepted. We've invited your GitHub account ` +
-        `${username} to the ${organization} organization: please accept the ` +
+        `${username} to the ${org} organization: please accept the ` +
         "invitation from GitHub's email or at " +
-        `https://github.com/orgs/${organization}/invitation within 7 days, ` +
+        `https://github.com/orgs/${org}/invitation within 7 days, ` +
         "after which it expires.",
       "",
       "The OpenWISP team",
@@ -196,42 +195,82 @@ function welcomeEmail(name, username) {
   };
 }
 
-// Run by a time-driven trigger. Sends the email of each decision queued by the
-// daily workflow, then marks it as sent, or as failed with the error.
-function sendPendingEmails() {
-  const sheet = SpreadsheetApp.getActive().getSheetByName(SHEET_NAME);
-  const header = getHeader(sheet);
-  const column = (title) => getColumn(header, title) - 1;
-  const status = column(EMAIL_STATUS_COLUMN);
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
+function organization() {
+  const value = getProperty("ORGANIZATION");
+  if (!value) {
+    throw new Error("Set the ORGANIZATION Script Property");
+  }
+  return value;
+}
+
+function warningEmail(name, username, lastActivity) {
+  return {
+    subject: "Your OpenWISP membership",
+    body: [
+      `Hi ${name},`,
+      "",
+      `We haven't seen any activity from your GitHub account ${username} in ` +
+        `OpenWISP repositories since ${lastActivity}. Members who are ` +
+        `inactive for 90 days are removed from the ${organization()} ` +
+        "organization.",
+      "",
+      "To stay a member, open or review a pull request, open or comment on " +
+        "an issue, or take part in a discussion. If you are removed, you can " +
+        "apply again with the form.",
+      "",
+      "The OpenWISP team",
+    ].join("\n"),
+  };
+}
+
+function removalEmail(name, username, lastActivity) {
+  return {
+    subject: "Your OpenWISP membership has ended",
+    body: [
+      `Hi ${name},`,
+      "",
+      `Your GitHub account ${username} was removed from the ` +
+        `${organization()} organization, because it had no activity in ` +
+        `OpenWISP repositories since ${lastActivity}.`,
+      "",
+      "Thank you for your contributions. You are welcome to apply again " +
+        "with the form.",
+      "",
+      "The OpenWISP team",
+    ].join("\n"),
+  };
+}
+
+// Sends the email of each row whose Email status is Pending, then marks it as
+// sent, or as failed with the error. buildEmail returns null for a row
+// without an email to send.
+function sendQueued(sheet, buildEmail) {
+  if (!sheet || sheet.getLastRow() < 2) {
     return;
   }
+  const header = getHeader(sheet);
+  const status = getColumn(header, EMAIL_STATUS_COLUMN) - 1;
   const rows = sheet
-    .getRange(2, 1, lastRow - 1, sheet.getLastColumn())
+    .getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn())
     .getDisplayValues();
   rows.forEach((values, index) => {
-    const decision = values[column("Decision")].toLowerCase();
-    if (
-      values[status] !== PENDING ||
-      !["accept", "reject"].includes(decision)
-    ) {
+    if (values[status] !== PENDING) {
       return;
     }
+    const value = (title) => values[getColumn(header, title) - 1];
     // Stop for today when the quota is used up; the rest stay pending.
     if (MailApp.getRemainingDailyQuota() < 1) {
       return;
     }
     const cell = sheet.getRange(index + 2, status + 1);
-    const name = values[column("Full Name")];
     try {
-      const email =
-        decision === "accept"
-          ? welcomeEmail(name, values[column("Github Username")])
-          : rejectionEmail(name, values[column("Validation")]);
+      const email = buildEmail(value);
+      if (!email) {
+        return;
+      }
       const replyTo = getProperty("REPLY_TO");
       MailApp.sendEmail({
-        to: values[column("Email")],
+        to: value("Email"),
         subject: email.subject,
         body: email.body,
         name: "OpenWISP",
@@ -241,5 +280,31 @@ function sendPendingEmails() {
     } catch (error) {
       cell.setValue(`${FAILED} ${error.message}`);
     }
+  });
+}
+
+// Run by a time-driven trigger. Sends the emails queued by the daily
+// workflow (decisions) and by the weekly review (inactivity).
+function sendPendingEmails() {
+  const spreadsheet = SpreadsheetApp.getActive();
+  sendQueued(spreadsheet.getSheetByName(SHEET_NAME), (value) => {
+    const decision = value("Decision").toLowerCase();
+    if (decision === "accept") {
+      return welcomeEmail(value("Full Name"), value("Github Username"));
+    }
+    if (decision === "reject") {
+      return rejectionEmail(value("Full Name"), value("Validation"));
+    }
+    return null;
+  });
+  sendQueued(spreadsheet.getSheetByName(MEMBERS_SHEET_NAME), (value) => {
+    const lastActivity = value("Last activity") || value("Joined on");
+    if (value("Removed on")) {
+      return removalEmail(value("Full Name"), value("Username"), lastActivity);
+    }
+    if (value("Warned on")) {
+      return warningEmail(value("Full Name"), value("Username"), lastActivity);
+    }
+    return null;
   });
 }
